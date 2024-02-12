@@ -1,6 +1,8 @@
 import boto3
 import datetime
 
+account_id = boto3.client('sts').get_caller_identity().get('Account')
+
 def lambda_handler(event, context):
     current_date = datetime.datetime.now()
 

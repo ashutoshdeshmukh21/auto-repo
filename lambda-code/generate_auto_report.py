@@ -759,11 +759,8 @@ class PDFWithHeaderFooter(FPDF):
 def create_report():
     try:
         current_date = datetime.now()
-        # Get the first day of the current month
         first_day_current_month = current_date.replace(day=1)
-        # Calculate the last day of the previous month
         last_day_previous_month = first_day_current_month - timedelta(days=1)
-        # Get the name of the previous month
         previous_month_name = last_day_previous_month.strftime("%B %Y")
 
         current_month_year = current_date.strftime("%B %Y")
@@ -861,7 +858,7 @@ def generate_content_table_pdf(file_name):
             [8, "Security Insights\n    Top User-Agents\n    Top Blocked Rules\n    Top 10 IPs blocked"],
         ]
         pdf_canvas = canvas.Canvas(file_name, pagesize=A4)
-        pdf_table = Table(content_data, colWidths=[0.7 * inch, 4 * inch])  # Adjust column widths here
+        pdf_table = Table(content_data, colWidths=[0.7 * inch, 4 * inch])
 
         style = TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.white),
@@ -923,11 +920,10 @@ def retrieve_and_save_pdf():
 
         s3 = boto3.client('s3')
 
-        # Create an empty list to track if Athena tables are processed
         processed_tables = []
 
         for query_name, file_suffix in query_details.items():
-            if query_name not in processed_tables:  # Check if the table is processed
+            if query_name not in processed_tables:
                 file_key = f"athena-queries-results/{last_month_year}/{last_month_numeric}/{file_suffix}.csv"
 
                 try:
@@ -960,7 +956,7 @@ def retrieve_and_save_pdf():
                     elements.append(table)
                     elements.append(Spacer(1, 25))
 
-                    processed_tables.append(query_name)  # Mark the table as processed
+                    processed_tables.append(query_name)
 
                     print(f"CSV data fetched successfully for {query_name}")
                 except Exception as e:
@@ -1433,15 +1429,15 @@ def create_plots_pdf(rds_instance_id, ec2_instance_id, website_distid, assets_di
         title_alb_response_time = 'ALB Target Response Time'
         description_alb_response_time = 'This plot shows the average target response time of the ALB ' + alb_name + ' for the last month.'
     
-        pdf.image(temp_img_path_alb_response_time, x=pdf.w / 1 - 200, y=pdf.w / 1 - 40, w=175, h=100)  # Adjust x, y, w, and h as needed
-        pdf.ln(10)  # Move to the next line
+        pdf.image(temp_img_path_alb_response_time, x=pdf.w / 1 - 200, y=pdf.w / 1 - 40, w=175, h=100)
+        pdf.ln(10)
         pdf.set_font('Arial', 'B', 14)
         pdf.cell(40, 10, title_alb_response_time)
-        pdf.ln(10)  # Move to the next line
+        pdf.ln(10)
         pdf.set_font('Arial', '', 10)
         pdf.multi_cell(0, 10, description_alb_response_time)
-        pdf.ln(80)  # Move to the next line
-    
+        pdf.ln(80)
+
         pdf.add_page()
     
         # Combine Healthy and Unhealthy Hosts into a single plot
@@ -1532,7 +1528,7 @@ def generate_cost_comparison_image():
 
     plt.xticks(rotation=0, ha='center')
 
-    image_file = '/tmp/Cost.png'  # Change the extension to save in different image formats
+    image_file = '/tmp/Cost.png'
     plt.savefig(image_file, bbox_inches='tight', pad_inches=0.1)
     plt.close()
 
@@ -1639,29 +1635,25 @@ def analyze_and_plot_top_services():
         ax.legend(months, title='Months', loc='upper right')
 
         plt.tight_layout()
-        plt.savefig(filename, format='png')  # Change format to PNG
+        plt.savefig(filename, format='png')
         plt.close()
 
     top_10_services = get_top_services(datetime.now(), datetime.now(), 10)
     costs_last_two_months = get_last_two_months_cost(top_10_services.keys())
 
-    plot_graphs(costs_last_two_months, '/tmp/Services.png')  # Change filename extension to PNG
+    plot_graphs(costs_last_two_months, '/tmp/Services.png')
     print(f"PNG image has been saved successfully.")
 
 analyze_and_plot_top_services()
 
 def create_pdf_with_images():
-    # Paths to the images and the PDF file
     image_files = ["/tmp/Services.png", "/tmp/Cost.png"]
     pdf_file = "/tmp/Cost_Service.pdf"
 
-    # Create a PDF document
     doc = SimpleDocTemplate(pdf_file, pagesize=letter)
 
-    # A list to store image elements
     elements = []
 
-    # Create styles for images
     style1 = TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                          ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                          ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.black),
@@ -1672,25 +1664,20 @@ def create_pdf_with_images():
                          ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.black),
                          ('BOX', (0, 0), (-1, -1), 0.25, colors.black)])
 
-    # Create table for first image
     table1 = Table([[Image(image_files[0], width=350, height=280)]])
     table1.setStyle(style1)
 
-    # Create table for second image
     table2 = Table([[Image(image_files[1], width=300, height=300)]])
     table2.setStyle(style2)
 
-    # Add tables to the elements list
     elements.append(table1)
-    elements.append(Spacer(1, 24))  # Spacer to add space between images (adjust as needed)
+    elements.append(Spacer(1, 24))
     elements.append(table2)
 
-    # Build the PDF document
     doc.build(elements)
 
     print(f"PDF file '{pdf_file}' created successfully with the images.")
 
-# Call the function to create the PDF with images
 create_pdf_with_images()
 
 
@@ -1709,28 +1696,23 @@ def send_email_with_attachments(attachment_paths, receiver_email):
 
         sender_email = "ashutosh.deshmukh@whistlemind.com"
 
-        # Create a new SES resource
         ses_client = boto3.client('ses', region_name='us-east-1')
 
-        # Create a multipart/mixed parent container
         msg = MIMEMultipart('mixed')
         msg['Subject'] = f"AWS Report of {last_month_name} {last_month_year}"
         msg['From'] = sender_email
         msg['To'] = receiver_email
 
-        # Add a text/html attachment
         text = f"Please find the AWS Report of {last_month_name} {last_month_year}."
         part_text = MIMEText(text, 'plain')
         msg.attach(part_text)
 
-        # Attach files
         for attachment_path in attachment_paths:
             with open(attachment_path, 'rb') as file:
                 part = MIMEApplication(file.read(), Name=os.path.basename(attachment_path))
                 part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
                 msg.attach(part)
 
-        # Send the email
         response = ses_client.send_raw_email(
             Source=msg['From'],
             Destinations=[msg['To']],
@@ -1753,8 +1735,6 @@ def lambda_handler(event, context):
 
         end_time = first_day_current_month - timedelta(days=1)
         first_day_desired_month = end_time.replace(day=1)
-
-        # Define your other functions here (get_rds_metrics, get_ec2_metrics, create_report, generate_content_table_pdf, retrieve_and_save_pdf, create_plots_pdf, send_email_with_attachments)
 
         # 1. Create report
         report_pdf_path = create_report()
@@ -1797,3 +1777,19 @@ def lambda_handler(event, context):
             'body': f'Error: {str(e)}'
         }
 
+# It will wait for 5 seconds and then start removing the tmp files
+time.sleep(5)
+
+# Remove each file one by one
+directory = '/tmp'
+
+files = os.listdir(directory)
+
+for file_name in files:
+    file_path = os.path.join(directory, file_name)
+    try:
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+            print(f"Removed file: {file_path}")
+    except Exception as e:
+        print(f"Error removing file {file_path}: {str(e)}")
