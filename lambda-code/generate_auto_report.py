@@ -7,6 +7,8 @@ import time
 import os
 from dateutil.relativedelta import relativedelta
 import pytz
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Image, Spacer
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -19,9 +21,11 @@ from reportlab.lib import colors
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import inch
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, PageBreak, Table
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import numpy as np
+from collections import defaultdict
+import calendar
 
 ec2_instance_id = 'i-0ad89840c239d3159'
 rds_instance_id = 'database-1'
@@ -1483,6 +1487,212 @@ def create_plots_pdf(rds_instance_id, ec2_instance_id, website_distid, assets_di
     except Exception as e:
         print(f"Error in create_plots_pdf: {str(e)}")
 
+def generate_cost_comparison_image():
+    client = boto3.client('ce')
+
+    current_date = datetime.now()
+    end_date = current_date.replace(day=1) - timedelta(days=1)
+    start_date = end_date.replace(day=1) - timedelta(days=1)
+    start_date -= timedelta(days=30)
+    
+    response = client.get_cost_and_usage(
+        TimePeriod={
+            'Start': start_date.strftime('%Y-%m-%d'),
+            'End': end_date.strftime('%Y-%m-%d')
+        },
+        Granularity='MONTHLY',
+        Metrics=['UnblendedCost'],
+        Filter={
+            "Dimensions": {
+                "Key": "RECORD_TYPE",
+                "Values": ["Usage"]
+            }
+        }
+    )
+
+    cost_data = []
+    month_labels = []
+
+    for result in response['ResultsByTime']:
+        month_start = result['TimePeriod']['Start']
+        month_date = datetime.strptime(month_start, '%Y-%m-%d')
+        month_name = calendar.month_abbr[month_date.month]
+        year = month_date.year
+        month_labels.append(f"{month_name}-{year}")
+        cost = float(result['Total']['UnblendedCost']['Amount'])
+        cost_data.append(cost)
+
+    plt.figure(figsize=(8.27/1.5, 11.69/2))
+    plt.bar(month_labels, cost_data, label='Cost')
+    plt.xlabel('Month')
+    plt.ylabel('Cost')
+    plt.title('Cost Comparison')
+    plt.legend()
+    plt.grid(False)
+
+    plt.xticks(rotation=0, ha='center')
+
+    image_file = '/tmp/Cost.png'  # Change the extension to save in different image formats
+    plt.savefig(image_file, bbox_inches='tight', pad_inches=0.1)
+    plt.close()
+
+    print(f"Image file '{image_file}' has been saved successfully.")
+
+generate_cost_comparison_image()
+
+def analyze_and_plot_top_services():
+    def get_top_services(start, end, n):
+        client = boto3.client('ce', region_name='us-east-1')
+        
+        response = client.get_cost_and_usage(
+            TimePeriod={
+                'Start': start.strftime('%Y-%m-01'),
+                'End': end.strftime('%Y-%m-%d')
+            },
+            Granularity='MONTHLY',
+            Metrics=['UnblendedCost'],
+            GroupBy=[
+                {
+                    'Type': 'DIMENSION',
+                    'Key': 'SERVICE'
+                }
+            ]
+        )
+        
+        services_costs = defaultdict(float)
+        for result in response['ResultsByTime']:
+            for group in result['Groups']:
+                service_name = group['Keys'][0]
+                cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                services_costs[service_name] += cost
+        
+        sorted_services = sorted(services_costs.items(), key=lambda x: x[1], reverse=True)
+        top_n_services = dict(sorted_services[:n])
+        return top_n_services
+
+    def get_last_two_months_cost(services):
+        start_date = datetime(2023, 12, 1)
+        end_date = datetime(2024, 1, 31)
+        
+        client = boto3.client('ce', region_name='us-east-1')
+
+        response = client.get_cost_and_usage(
+            TimePeriod={
+                'Start': start_date.strftime('%Y-%m-%d'),
+                'End': end_date.strftime('%Y-%m-%d')
+            },
+            Granularity='MONTHLY',
+            Metrics=['UnblendedCost'],
+            GroupBy=[
+                {
+                    'Type': 'DIMENSION',
+                    'Key': 'SERVICE'
+                }
+            ],
+            Filter={
+                "Dimensions": {
+                    "Key": "RECORD_TYPE",
+                    "Values": ["Usage"]
+                }
+            }
+        )
+
+        services_costs = defaultdict(lambda: [0.0, 0.0])
+
+        for result in response['ResultsByTime']:
+            month_start = result['TimePeriod']['Start']
+            month_date = datetime.strptime(month_start, '%Y-%m-%d').replace(day=1)
+
+            if start_date <= month_date <= end_date:
+                month_diff = (end_date.year - month_date.year) * 12 + end_date.month - month_date.month
+                month_index = month_diff - 1
+                for group in result['Groups']:
+                    service_name = group['Keys'][0]
+                    if service_name in services:
+                        cost = float(group['Metrics']['UnblendedCost']['Amount'])
+                        if len(services_costs[service_name]) > month_index:
+                            services_costs[service_name][month_index] = cost
+                        else:
+                            print(f"Index out of range for {service_name}: month_index={month_index}, len={len(services_costs[service_name])}")
+
+        return services_costs
+
+    def plot_graphs(cost_data, filename):
+        services = list(cost_data.keys())
+        
+        width = 0.25
+        fig, ax = plt.subplots()
+
+        months = [((datetime.now() - timedelta(days=30)) - timedelta(days=30)).strftime('%b %Y'), (datetime.now() - timedelta(days=30)).strftime('%b %Y')]
+
+        for i, service in enumerate(services):
+            costs = cost_data[service]
+            ax.bar(i, costs[0], width=width, label=f'{service}', color='red', align='center')
+            ax.bar(i + width, costs[1], width=width, color='blue', align='center')
+
+        ax.set_xlabel('Services')
+        ax.set_ylabel('Cost')
+        ax.set_title('Cost Comparison of Services for Last and This Month')
+        ax.set_xticks([i + width / 2 for i in range(len(services))])
+        ax.set_xticklabels(services, rotation=45, ha='right')
+
+        ax.legend(months, title='Months', loc='upper right')
+
+        plt.tight_layout()
+        plt.savefig(filename, format='png')  # Change format to PNG
+        plt.close()
+
+    top_10_services = get_top_services(datetime.now(), datetime.now(), 10)
+    costs_last_two_months = get_last_two_months_cost(top_10_services.keys())
+
+    plot_graphs(costs_last_two_months, '/tmp/Services.png')  # Change filename extension to PNG
+    print(f"PNG image has been saved successfully.")
+
+analyze_and_plot_top_services()
+
+def create_pdf_with_images():
+    # Paths to the images and the PDF file
+    image_files = ["/tmp/Services.png", "/tmp/Cost.png"]
+    pdf_file = "/tmp/Cost_Service.pdf"
+
+    # Create a PDF document
+    doc = SimpleDocTemplate(pdf_file, pagesize=letter)
+
+    # A list to store image elements
+    elements = []
+
+    # Create styles for images
+    style1 = TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                         ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.black),
+                         ('BOX', (0, 0), (-1, -1), 0.25, colors.black)])
+
+    style2 = TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                         ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.black),
+                         ('BOX', (0, 0), (-1, -1), 0.25, colors.black)])
+
+    # Create table for first image
+    table1 = Table([[Image(image_files[0], width=350, height=280)]])
+    table1.setStyle(style1)
+
+    # Create table for second image
+    table2 = Table([[Image(image_files[1], width=300, height=300)]])
+    table2.setStyle(style2)
+
+    # Add tables to the elements list
+    elements.append(table1)
+    elements.append(Spacer(1, 24))  # Spacer to add space between images (adjust as needed)
+    elements.append(table2)
+
+    # Build the PDF document
+    doc.build(elements)
+
+    print(f"PDF file '{pdf_file}' created successfully with the images.")
+
+# Call the function to create the PDF with images
+create_pdf_with_images()
+
 
 def send_email_with_attachments(attachment_paths, receiver_email):
     try:
@@ -1547,11 +1757,13 @@ def lambda_handler(event, context):
 
         # 4. Retrieve and save Athena tables PDF
         athena_table_pdf_path = retrieve_and_save_pdf()
-
-        # 5. Combine all PDFs
+        
+        # 5. Creat Cost comparison pdf
+        cost_serices_pdf = '/tmp/Cost_Service.pdf'
+        # 6. Combine all PDFs
         merger = PdfMerger()
 
-        pdf_files = [report_pdf_path, content_table_pdf_path, plots_pdf_path, athena_table_pdf_path]
+        pdf_files = [report_pdf_path, content_table_pdf_path, plots_pdf_path, athena_table_pdf_path, cost_serices_pdf]
 
         for file in pdf_files:
             merger.append(PdfReader(file))
