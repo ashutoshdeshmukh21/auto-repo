@@ -1696,6 +1696,17 @@ create_pdf_with_images()
 
 def send_email_with_attachments(attachment_paths, receiver_email):
     try:
+        current_date = datetime.now()
+        
+        last_month = current_date - timedelta(days=30)
+        last_month_name = last_month.strftime('%B')
+        last_month_year = last_month.strftime('%Y')
+        
+        first_day_current_month = current_date.replace(day=1)
+
+        end_time = first_day_current_month - timedelta(days=1)
+        first_day_desired_month = end_time.replace(day=1)
+
         sender_email = "ashutosh.deshmukh@whistlemind.com"
 
         # Create a new SES resource
@@ -1703,12 +1714,12 @@ def send_email_with_attachments(attachment_paths, receiver_email):
 
         # Create a multipart/mixed parent container
         msg = MIMEMultipart('mixed')
-        msg['Subject'] = "Monthly Technical Report"
+        msg['Subject'] = f"AWS Report of {last_month_name} {last_month_year}"
         msg['From'] = sender_email
         msg['To'] = receiver_email
 
         # Add a text/html attachment
-        text = "Please find the attached monthly technical report."
+        text = f"Please find the AWS Report of {last_month_name} {last_month_year}."
         part_text = MIMEText(text, 'plain')
         msg.attach(part_text)
 
